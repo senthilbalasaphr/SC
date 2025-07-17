@@ -72,11 +72,14 @@ public class Near52Low {
 
                     // Calculate volatility %
                     float vol = 0.0f;
+                    float cvol = 0.0f;
 
                     if (open > 0 && dhigh >= dlow) {
                          vol = ((dhigh - dlow) / open) * 100;
+                        cvol = (dhigh - dlow);
 
                     }
+                    row.add(String.format("%.2f", cvol));  // vol
                     row.add(String.format("%.2f", vol));  // vol
 
 
@@ -137,6 +140,7 @@ public class Near52Low {
         columns.add("Open");
         columns.add("Low");
         columns.add("High");
+        columns.add("Volatile Amount");
         columns.add("Volatile %");
         columns.add("52 Low");
         columns.add("52 High");

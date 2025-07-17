@@ -11,6 +11,14 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 
 import org.jdatepicker.impl.*; // for date picker
 import org.apache.poi.ss.usermodel.Workbook;
@@ -45,6 +53,8 @@ public class Selection {
     private JCheckBox sp500Checkbox;
 
     private JCheckBox myIndexCheckbox;
+    private JLabel clockIconLabel;
+
 
     private JTextField fromVolatilityPct, toVolatilityPct;
 
@@ -62,27 +72,34 @@ public class Selection {
         reportSelectionPanel.setBorder(BorderFactory.createTitledBorder("1. Select Report"));
 
         JRadioButton salesBtn = new JRadioButton("Near 52-Week Low");
-        JRadioButton inventoryBtn = new JRadioButton("Inventory Report");
-        JRadioButton employeesBtn = new JRadioButton("Employee Report");
-        JRadioButton industryBarChartBtn = new JRadioButton("Industry Bar Chart");
+        JRadioButton polygonLiveBtn = new JRadioButton("Polygon Live Snapshot");
+//        JRadioButton inventoryBtn = new JRadioButton("Inventory Report");
+//        JRadioButton employeesBtn = new JRadioButton("Employee Report");
+//        JRadioButton industryBarChartBtn = new JRadioButton("Industry Bar Chart");
+
 
         salesBtn.setActionCommand("near52low");
-        inventoryBtn.setActionCommand("inventory");
-        employeesBtn.setActionCommand("employees");
-        industryBarChartBtn.setActionCommand("industrychart");
+        polygonLiveBtn.setActionCommand("polygonlive");
+//        inventoryBtn.setActionCommand("inventory");
+//        employeesBtn.setActionCommand("employees");
+//        industryBarChartBtn.setActionCommand("industrychart");
 
 
         reportGroup = new ButtonGroup();
         reportGroup.add(salesBtn);
-        reportGroup.add(inventoryBtn);
-        reportGroup.add(employeesBtn);
-        reportGroup.add(industryBarChartBtn);
+        reportGroup.add(polygonLiveBtn);
+//        reportGroup.add(inventoryBtn);
+//        reportGroup.add(employeesBtn);
+//        reportGroup.add(industryBarChartBtn);
 
         reportSelectionPanel.add(salesBtn);
-        reportSelectionPanel.add(inventoryBtn);
-        reportSelectionPanel.add(employeesBtn);
-        reportSelectionPanel.add(industryBarChartBtn);
+        reportSelectionPanel.add(polygonLiveBtn);
+//        reportSelectionPanel.add(inventoryBtn);
+//        reportSelectionPanel.add(employeesBtn);
+//        reportSelectionPanel.add(industryBarChartBtn);
         stylePanel(reportSelectionPanel);
+
+
 
         JButton loadButton = new JButton("Load Report");
         loadButton.addActionListener(e -> {
@@ -221,8 +238,9 @@ public class Selection {
         filterPanel.setVisible(false);
 
         salesBtn.addActionListener(e -> filterPanel.setVisible(true));
-        inventoryBtn.addActionListener(e -> filterPanel.setVisible(false));
-        employeesBtn.addActionListener(e -> filterPanel.setVisible(false));
+        polygonLiveBtn.addActionListener(e -> filterPanel.setVisible(true));
+//        inventoryBtn.addActionListener(e -> filterPanel.setVisible(false));
+//        employeesBtn.addActionListener(e -> filterPanel.setVisible(false));
 
         JPanel buttonPanel = new JPanel();
         buttonPanel.setBorder(BorderFactory.createTitledBorder("3. Actions"));
@@ -359,7 +377,7 @@ public class Selection {
                             add=false;
                         }
 
-                        double lhper = parseDouble(row.get(17), -1);
+                        double lhper = parseDouble(row.get(18), -1);
                         if ((lhper >= lowhighperLow && lhper <= lowhighperHigh) ){
                             //
                         }else{
@@ -373,7 +391,7 @@ public class Selection {
                             add=false;
                         }
 
-                        double markamt = parseDouble(row.get(15), -1);
+                        double markamt = parseDouble(row.get(16), -1);
 
                             if ((markamt >= fromMarkLow && markamt <= fromMarkHigh)) {
                                 //
@@ -386,7 +404,7 @@ public class Selection {
                             add = false;
                         }
 
-                        double markDiff =  parseDouble(row.get(18), -1);
+                        double markDiff =  parseDouble(row.get(19), -1);
 
                             if (!(markDiff >= fromMarkDiffLow && markDiff <= fromMarkDiffHigh)) {
                                 add = false;
@@ -433,16 +451,59 @@ public class Selection {
                 rowCountLabel.setText("Total Rows: " + data.size());
                 break;
 
-            case "inventory":
-                columns.add("Product");
-                columns.add("Stock");
-                columns.add("Warehouse");
-                columns.add("Restock Date");
+            case "polygonlive":
+                columns.addAll(Arrays.asList("Symbol", "Name",   "Last", "DayDiff", "Change %", "Open", "High", "Low", "Close", "Volume",
+                       "PrevOpen", "PrevHigh", "PrevClose", "PrevVol", "After-Hours"));
 
-                data.add(row("Widget A", "100", "Main", "2025-05-10"));
-                data.add(row("Widget B", "50", "West", "2025-05-08"));
-                data.add(row("Widget C", "30", "Main", "2025-05-12"));
-                table.setModel(new DefaultTableModel(data, columns));
+//                List<Vector<String>> polygonData = fetchPolygonSnapshotData();
+//                data.addAll(polygonData);
+
+                List<Vector<String>> polygonData = fetchPolygonSnapshotData();
+
+                String PsymbolFilter = symbolFilterField.getText().trim().toLowerCase();
+                double PfromMarkLow = parseDouble(fromMark.getText(), 0);
+                double PfromMarkHigh = parseDouble(toMark.getText(), Double.MAX_VALUE);
+                double PfromMarkDiffLow = parseDouble(fromMarkDiff.getText(), Double.NEGATIVE_INFINITY);
+                double PfromMarkDiffHigh = parseDouble(toMarkDiff.getText(), Double.POSITIVE_INFINITY);
+
+                for (Vector<String> row : polygonData) {
+                    try {
+                        String symbol = row.get(0).toLowerCase();
+                        double mark = parseDouble(row.get(2), -1);         // Last price (Mark)
+                        double prevClose = parseDouble(row.get(12), -1);   // Prev Close
+                        double markDiff = mark - prevClose;
+
+                        boolean matches = true;
+
+                        if (!PsymbolFilter.isEmpty() && !symbol.contains(PsymbolFilter)) {
+                            matches = false;
+                        }
+
+                        if (mark < PfromMarkLow || mark > PfromMarkHigh) {
+                            matches = false;
+                        }
+
+                        if (markDiff < PfromMarkDiffLow || markDiff > PfromMarkDiffHigh) {
+                            matches = false;
+                        }
+
+                        if (matches) {
+                            data.add(row);
+                        }
+
+                    } catch (Exception ignored) {}
+                }
+
+
+                DefaultTableModel polygonModel = new DefaultTableModel(data, columns);
+                table.setModel(polygonModel);
+
+                TableRowSorter<TableModel> polygonSorter = new TableRowSorter<>(polygonModel);
+                int[] numericPolygonCols = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,14}; // Indexes of numeric columns
+                for (int col : numericPolygonCols) {
+                    polygonSorter.setComparator(col, (o1, o2) -> compareAsDouble(o1, o2));
+                }
+                table.setRowSorter(polygonSorter);
                 rowCountLabel.setText("Total Rows: " + data.size());
                 break;
 
@@ -574,4 +635,102 @@ public class Selection {
         chartFrame.setSize(800, 600);
         chartFrame.setVisible(true);
     }
+
+    private List<Vector<String>> fetchPolygonSnapshotData() {
+        List<Vector<String>> rows = new ArrayList<>();
+        Map<String, String> tickerNameMap = new HashMap<>();
+
+        try {
+            // Fetch all ticker names via pagination
+            String nextUrl = "https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=8CFFkEI2zMfN7xBIkeuJz1qlJ4UJ0iRM";
+
+            while (nextUrl != null) {
+                URL url = new URL(nextUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+
+                BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder json = new StringBuilder();
+                String line;
+                while ((line = in.readLine()) != null) json.append(line);
+                in.close();
+
+                JSONObject obj = new JSONObject(json.toString());
+                JSONArray results = obj.optJSONArray("results");
+                if (results != null) {
+                    for (int i = 0; i < results.length(); i++) {
+                        JSONObject t = results.getJSONObject(i);
+                        String ticker = t.optString("ticker");
+                        String name = t.optString("name");
+                        if (!ticker.isEmpty() && !name.isEmpty()) {
+                            tickerNameMap.put(ticker, name);
+                        }
+                    }
+                }
+
+                String nextToken = obj.optString("next_url", null);
+                nextUrl = (nextToken != null && !nextToken.isEmpty()) ? nextToken + "&apiKey=8CFFkEI2zMfN7xBIkeuJz1qlJ4UJ0iRM" : null;
+            }
+
+            // Fetch snapshot data
+            String urlStr = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey=8CFFkEI2zMfN7xBIkeuJz1qlJ4UJ0iRM";
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            StringBuilder json = new StringBuilder();
+            String line;
+            while ((line = in.readLine()) != null) json.append(line);
+            in.close();
+
+            JSONObject obj = new JSONObject(json.toString());
+            JSONArray tickers = obj.getJSONArray("tickers");
+
+            for (int i = 0; i < tickers.length(); i++) {
+                JSONObject t = tickers.getJSONObject(i);
+                JSONObject day = t.optJSONObject("day");
+                JSONObject lastTrade = t.optJSONObject("lastTrade");
+                JSONObject prevDay = t.optJSONObject("prevDay");
+
+                String ticker = t.optString("ticker");
+                String name = tickerNameMap.getOrDefault(ticker, "(Unknown)");
+
+                double last = lastTrade != null ? lastTrade.optDouble("p", 0.0) : 0.0;
+                double prevClose = prevDay != null ? prevDay.optDouble("c", 0.0) : 0.0;
+                double afterHoursDelta = (last > 0 && prevClose > 0) ? last - prevClose : 0.0;
+                double open = day.optDouble("o");
+                double dayDiff = 0;
+                if (open > 0 ){
+                    dayDiff = last - prevClose;
+                }
+
+
+                Vector<String> row = new Vector<>();
+                row.add(ticker);                                           // Symbol
+                row.add(name);                                             // Name
+                row.add(String.format("%.2f", last));
+                row.add(String.format("%.2f", dayDiff));
+                row.add(String.format("%.2f", t.optDouble("todaysChangePerc")));
+                row.add(String.format("%.2f", day.optDouble("o")));
+                row.add(String.format("%.2f", day.optDouble("h")));
+                row.add(String.format("%.2f", day.optDouble("l")));
+                row.add(String.format("%.2f", day.optDouble("c")));
+                row.add(String.format("%.0f", day.optDouble("v")));
+                row.add(String.format("%.2f", prevDay.optDouble("o")));
+                row.add(String.format("%.2f", prevDay.optDouble("h")));
+                row.add(String.format("%.2f", prevClose));
+                row.add(String.format("%.0f", prevDay.optDouble("v")));
+                row.add(String.format("%.2f", afterHoursDelta));
+
+                rows.add(row);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return rows;
+    }
+
 }
