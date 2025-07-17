@@ -238,7 +238,15 @@ public class Selection {
         filterPanel.setVisible(false);
 
         salesBtn.addActionListener(e -> filterPanel.setVisible(true));
-        polygonLiveBtn.addActionListener(e -> filterPanel.setVisible(true));
+        polygonLiveBtn.addActionListener(e -> {
+            filterPanel.setVisible(true);
+            sp500Checkbox.setVisible(true);
+            myIndexCheckbox.setVisible(true);
+        });
+        // ✅ Make the window full screen
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+        frame.setSize(screenSize);
 //        inventoryBtn.addActionListener(e -> filterPanel.setVisible(false));
 //        employeesBtn.addActionListener(e -> filterPanel.setVisible(false));
 
@@ -453,12 +461,18 @@ public class Selection {
 
             case "polygonlive":
                 columns.addAll(Arrays.asList("Symbol", "Name",   "Last", "DayDiff", "Change %", "Open", "High", "Low", "Close", "Volume",
-                       "PrevOpen", "PrevHigh", "PrevClose", "PrevVol", "After-Hours"));
+                       "PrevOpen", "PrevHigh", "PrevClose", "PrevVol", "After-Hours","Day Range Bar"));
 
 //                List<Vector<String>> polygonData = fetchPolygonSnapshotData();
 //                data.addAll(polygonData);
 
                 List<Vector<String>> polygonData = fetchPolygonSnapshotData();
+
+                boolean PfilterSP500 = sp500Checkbox.isSelected();
+                boolean PfilterMyIndex = myIndexCheckbox.isSelected();
+                Map<String, String> Pcompanies = Index.IndexCompanies();
+                Map<String, String> PmyIndexCompanies = MyIndex.MyIndexCompanies();
+
 
                 String PsymbolFilter = symbolFilterField.getText().trim().toLowerCase();
                 double PfromMarkLow = parseDouble(fromMark.getText(), 0);
@@ -472,6 +486,8 @@ public class Selection {
                         double mark = parseDouble(row.get(2), -1);         // Last price (Mark)
                         double prevClose = parseDouble(row.get(12), -1);   // Prev Close
                         double markDiff = mark - prevClose;
+                        double high = parseDouble(row.get(6), -1);
+                        double low = parseDouble(row.get(7), -1);
 
                         boolean matches = true;
 
@@ -487,6 +503,17 @@ public class Selection {
                             matches = false;
                         }
 
+                        // ✅ Filter S&P 500
+                        if (PfilterSP500 && !Pcompanies.containsKey(row.get(0))) {
+                            matches = false;
+                        }
+
+                        // ✅ Filter MyIndex
+                        if (PfilterMyIndex && !PmyIndexCompanies.containsKey(row.get(0))) {
+                            matches = false;
+                        }
+
+
                         if (matches) {
                             data.add(row);
                         }
@@ -497,6 +524,9 @@ public class Selection {
 
                 DefaultTableModel polygonModel = new DefaultTableModel(data, columns);
                 table.setModel(polygonModel);
+                table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+                table.getColumnModel().getColumn(15).setCellRenderer(new RangeBarRenderer());
+              //  table.setFont(new Font("Monospaced", Font.PLAIN, 12)); // Ensures alignment
 
                 TableRowSorter<TableModel> polygonSorter = new TableRowSorter<>(polygonModel);
                 int[] numericPolygonCols = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,14}; // Indexes of numeric columns
@@ -723,6 +753,40 @@ public class Selection {
                 row.add(String.format("%.0f", prevDay.optDouble("v")));
                 row.add(String.format("%.2f", afterHoursDelta));
 
+                // ✅ Add range bar
+                double high = day.optDouble("h");
+                double low = day.optDouble("l");
+                double range = high - low;
+                String bar = "N/A";
+
+                if (range > 0 && last >= low && last <= high) {
+                    int barLength = 20;
+                    int pos = (int) ((last - low) / range * (barLength - 1));
+
+                    StringBuilder barBuilder = new StringBuilder();
+
+                    // ✅ Fixed-width labels for alignment
+                    String lowStr = String.format("%7.2f", low);   // e.g., " 180.00"
+                    String highStr = String.format("%7.2f", high); // e.g., " 200.00"
+
+                    barBuilder.append(lowStr).append(" "); // pad low
+                    barBuilder.append("|");
+
+                    for (int j = 0; j < barLength; j++) {
+                        if (j == pos) {
+                            barBuilder.append("V");
+                        } else {
+                            barBuilder.append("-");
+                        }
+                    }
+
+                    barBuilder.append("| ").append(highStr); // pad high
+
+                    bar = barBuilder.toString();
+                }
+                row.add(bar);  // Add bar as the last column
+
+
                 rows.add(row);
             }
 
@@ -733,4 +797,48 @@ public class Selection {
         return rows;
     }
 
+
+    static class RangeBarRenderer extends JLabel implements TableCellRenderer {
+
+        public RangeBarRenderer() {
+            setOpaque(true);
+            setFont(new Font("Monospaced", Font.PLAIN, 12)); // fixed-width font
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus,
+                                                       int row, int column) {
+
+            String bar = (value != null) ? value.toString() : "";
+            setText(bar);
+
+            // Ensure consistent background on selection
+            setBackground(isSelected ? table.getSelectionBackground() : Color.WHITE);
+
+            // Extract bar range and marker position
+            int vIndex = bar.indexOf("V");
+            int barStart = bar.indexOf("|");
+            int barEnd = bar.lastIndexOf("|");
+
+            Color color = Color.DARK_GRAY; // default
+
+            if (vIndex > barStart && barStart != -1 && barEnd > barStart) {
+                double position = (double) (vIndex - barStart - 1) / (barEnd - barStart - 2);
+
+                if (position <= 0.33) {
+                    color = new Color(0, 150, 0); // green (near low)
+                } else if (position <= 0.66) {
+                    color = new Color(255, 140, 0); // yellow/orange (mid)
+                } else {
+                    color = new Color(200, 0, 0); // red (near high)
+                }
+            }
+
+            // ⚠️ Important: setForeground LAST to override table defaults
+            setForeground(color);
+
+            return this;
+        }
+    }
 }

@@ -1,5 +1,9 @@
 package org.example;
 //senthilbalasaphr  $senthilbala9##
+//cd /Users/baps/Documents/Twillo/SC-SK/
+//git add .
+//git commit -m "Your commit message here"
+//git push origin main
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.ArrayList;
