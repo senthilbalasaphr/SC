@@ -9,13 +9,15 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.InputStreamReader;
 import java.io.BufferedReader;
-
+import java.io.FileReader;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -461,12 +463,15 @@ public class Selection {
 
             case "polygonlive":
                 columns.addAll(Arrays.asList("Symbol", "Name",   "Last", "DayDiff", "Change %", "Open", "High", "Low", "Close", "Volume",
-                       "PrevOpen", "PrevHigh", "PrevClose", "PrevVol", "After-Hours","Day Range Bar"));
+                       "PrevOpen",  "PrevClose",  "After-Hours","Day Range Bar","52W Low",  "52W High","52W Position Bar","52W Low Date","52W High Date"));
 
 //                List<Vector<String>> polygonData = fetchPolygonSnapshotData();
 //                data.addAll(polygonData);
 
                 List<Vector<String>> polygonData = fetchPolygonSnapshotData();
+
+
+
 
                 boolean PfilterSP500 = sp500Checkbox.isSelected();
                 boolean PfilterMyIndex = myIndexCheckbox.isSelected();
@@ -518,14 +523,62 @@ public class Selection {
                             data.add(row);
                         }
 
+
+
+
+
+
                     } catch (Exception ignored) {}
                 }
 
 
                 DefaultTableModel polygonModel = new DefaultTableModel(data, columns);
                 table.setModel(polygonModel);
-                table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-                table.getColumnModel().getColumn(15).setCellRenderer(new RangeBarRenderer());
+             //   table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+
+             // set width
+                int[] fixedWidths = new int[] {
+                        80,  // Column 0 (Symbol)
+                        160, // Column 1 (Name)
+                        70,  // Column 2 (Last)
+                        70,  // Column 3 (DayDiff)
+                        80,  // Column 4 (Change %)
+                        70,  // Column 5 (Open)
+                        70,  // Column 6 (High)
+                        70,  // Column 7 (Low)
+                        70,  // Column 8 (Close)
+                        90,  // Column 9 (Volume)
+                        70,  // Column 10 (PrevOpen)
+                        70,  // Column 11 (PrevClose)
+                        90,  // Column 12 (After Hrs)
+                        300,  // Column 12 (Daily Bar)
+                        70,  // Column 12 (52 Low)
+                        70,  // Column 12 (52 High)
+                        300,  // Column 12 (52 bar)
+                        90,   // Column 12 (52 l Date)
+                        90,   // Column 12 (52 h Date)
+
+                        // ... add more widths if more columns follow
+                };
+
+                TableColumnModel columnModel = table.getColumnModel();
+                for (int i = 0; i < fixedWidths.length && i < columnModel.getColumnCount(); i++) {
+                    TableColumn column = columnModel.getColumn(i);
+                    column.setPreferredWidth(fixedWidths[i]);
+                    column.setMinWidth(fixedWidths[i]);
+                    column.setMaxWidth(fixedWidths[i]);  // Optional: fully fix width
+                }
+
+
+
+
+
+                // ✅ Set light highlight color for selected row
+                table.setSelectionBackground(new Color(210, 210, 210)); // Slightly darker light gray
+                table.setSelectionForeground(Color.BLACK);
+
+                table.getColumnModel().getColumn(13).setCellRenderer(new RangeBarRenderer());
+                table.getColumnModel().getColumn(16).setCellRenderer(new RangeBarRenderer());
               //  table.setFont(new Font("Monospaced", Font.PLAIN, 12)); // Ensures alignment
 
                 TableRowSorter<TableModel> polygonSorter = new TableRowSorter<>(polygonModel);
@@ -670,6 +723,29 @@ public class Selection {
         List<Vector<String>> rows = new ArrayList<>();
         Map<String, String> tickerNameMap = new HashMap<>();
 
+        // Read 52weeks
+        Map<String, SummaryStats> summaryMap = new HashMap<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader("/Users/baps/Documents/Twillo/SC-SK/src/main/java/batch/symbol_high_low_summary.csv"))) {
+            String line = reader.readLine(); // skip header
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",");
+                if (parts.length < 6) continue;
+
+                String symbol = parts[0];
+                double low = Double.parseDouble(parts[1]);
+                String lowDate = parts[2];
+                double high = Double.parseDouble(parts[3]);
+                String highDate = parts[4];
+                long avgVolume = Long.parseLong(parts[5]);
+
+                summaryMap.put(symbol, new SummaryStats(low, lowDate, high, highDate, avgVolume));
+            }
+            System.out.println("✅ 52-week summary loaded: " + summaryMap.size() + " symbols");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
         try {
             // Fetch all ticker names via pagination
             String nextUrl = "https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apiKey=8CFFkEI2zMfN7xBIkeuJz1qlJ4UJ0iRM";
@@ -748,9 +824,9 @@ public class Selection {
                 row.add(String.format("%.2f", day.optDouble("c")));
                 row.add(String.format("%.0f", day.optDouble("v")));
                 row.add(String.format("%.2f", prevDay.optDouble("o")));
-                row.add(String.format("%.2f", prevDay.optDouble("h")));
+               // row.add(String.format("%.2f", prevDay.optDouble("h")));
                 row.add(String.format("%.2f", prevClose));
-                row.add(String.format("%.0f", prevDay.optDouble("v")));
+                //row.add(String.format("%.0f", prevDay.optDouble("v")));
                 row.add(String.format("%.2f", afterHoursDelta));
 
                 // ✅ Add range bar
@@ -786,6 +862,68 @@ public class Selection {
                 }
                 row.add(bar);  // Add bar as the last column
 
+                //52 weeks add
+                SummaryStats stats = summaryMap.get(ticker);
+                if (stats != null) {
+                    // Add 52W low and high
+                    //update based on current
+                    if (low<stats.low){
+                        stats.low = low;
+                    }
+
+                    if(high>stats.high){
+                        stats.high = high;
+                    }
+
+                    row.add(String.format("%.2f", stats.low));   // 52W Low
+                    row.add(String.format("%.2f", stats.high));  // 52W High
+
+                    // Build 52W position bar
+//                    double range1 = stats.high - stats.low;
+//                    if (range1 > 0 && last >= stats.low && last <= stats.high) {
+//                        int barLength = 20;
+//                        int pos = (int) ((last - stats.low) / range1 * (barLength - 1));
+//
+//                        StringBuilder bar1 = new StringBuilder("|");
+//                        for (int j = 0; j < barLength; j++) {
+//                            bar1.append(j == pos ? "V" : "-");
+//                        }
+//                        bar1.append("|");
+//                        row.add(bar1.toString()); // 52W Bar
+//                    } else {
+//                        row.add("N/A");
+//                    }
+                    row.add(build52WBar(last,stats.low,stats.high));
+
+                    DateTimeFormatter inputFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+                    DateTimeFormatter outputFormat = DateTimeFormatter.ofPattern("MM/dd/yyyy");
+                    try {
+                        LocalDate lowDate = LocalDate.parse(stats.lowDate, inputFormat);
+                        LocalDate highDate = LocalDate.parse(stats.highDate, inputFormat);
+
+                      //  row.add(String.format("%.2f", stats.low));         // "52W Low"
+                        row.add(outputFormat.format(lowDate));             // "52W Low Date"
+                       // row.add(String.format("%.2f", stats.high));        // "52W High"
+                        row.add(outputFormat.format(highDate));            // "52W High Date"
+
+                        // Add the fixed-width bar
+                        //row.add(build52WBar(last, stats.low, stats.high));
+
+                    } catch (Exception e) {
+                        // Fallback if date parsing fails
+                        //row.add(String.format("%.2f", stats.low));
+                        row.add(stats.lowDate);
+                        //row.add(String.format("%.2f", stats.high));
+                        row.add(stats.highDate);
+                        //row.add(build52WBar(last, stats.low, stats.high));
+                    }
+                } else {
+                    row.add("N/A");
+                    row.add("N/A");
+                    row.add("N/A");
+                    row.add("N/A");
+                    row.add("N/A");
+                }
 
                 rows.add(row);
             }
@@ -841,4 +979,32 @@ public class Selection {
             return this;
         }
     }
+    public static String build52WBar(double last, double low, double high) {
+        int barLength = 20;
+        double range = high - low;
+
+        if (range <= 0 || last < low || last > high) {
+            return "N/A";
+        }
+
+        int pos = (int) ((last - low) / range * (barLength - 1));
+
+        StringBuilder barBuilder = new StringBuilder();
+
+        // ✅ Fixed-width labels for alignment
+        String lowStr = String.format("%7.2f", low);   // e.g., " 180.00"
+        String highStr = String.format("%7.2f", high); // e.g., " 200.00"
+
+        barBuilder.append(lowStr).append(" "); // pad low
+        barBuilder.append("|");
+
+        for (int j = 0; j < barLength; j++) {
+            barBuilder.append(j == pos ? "V" : "-");
+        }
+
+        barBuilder.append("| ").append(highStr); // pad high
+
+        return barBuilder.toString();
+    }
+
 }
